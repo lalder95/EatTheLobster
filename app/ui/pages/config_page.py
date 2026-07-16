@@ -34,9 +34,19 @@ class _ConnectionForm(QWidget):
         self.name_edit.setPlaceholderText("Production DB")
         layout.addRow("Name *", self.name_edit)
 
+        self.db_type_combo = QComboBox()
+        self.db_type_combo.addItem("MySQL", userData="mysql")
+        self.db_type_combo.addItem("SQL Server", userData="mssql")
+        self.db_type_combo.currentIndexChanged.connect(self._on_db_type_changed)
+        layout.addRow("DB Type *", self.db_type_combo)
+
         self.host_edit = QLineEdit()
         self.host_edit.setPlaceholderText("localhost")
         layout.addRow("Host *", self.host_edit)
+
+        self.instance_edit = QLineEdit()
+        self.instance_edit.setPlaceholderText("SQLEXPRESS")
+        layout.addRow("Instance", self.instance_edit)
 
         self.port_spin = QSpinBox()
         self.port_spin.setRange(1, 65535)
@@ -48,6 +58,10 @@ class _ConnectionForm(QWidget):
         self.db_edit.setPlaceholderText("my_database")
         layout.addRow("Database *", self.db_edit)
 
+        self.windows_auth_chk = QCheckBox("Use Windows Authentication")
+        self.windows_auth_chk.toggled.connect(self._on_windows_auth_changed)
+        layout.addRow("Auth", self.windows_auth_chk)
+
         self.user_edit = QLineEdit()
         self.user_edit.setPlaceholderText("db_user")
         layout.addRow("Username *", self.user_edit)
@@ -57,10 +71,39 @@ class _ConnectionForm(QWidget):
         self.pass_edit.setPlaceholderText("••••••••")
         layout.addRow("Password *", self.pass_edit)
 
+        self._on_db_type_changed()
+        self._on_windows_auth_changed(False)
+
+    def _on_db_type_changed(self) -> None:
+        is_sql_server = self.db_type_combo.currentData() == "mssql"
+        layout = self.layout()
+        if isinstance(layout, QFormLayout):
+            layout.setRowVisible(self.instance_edit, is_sql_server)
+            layout.setRowVisible(self.windows_auth_chk, is_sql_server)
+
+        if is_sql_server:
+            if self.port_spin.value() == 3306:
+                self.port_spin.setValue(1433)
+        else:
+            if self.port_spin.value() == 1433:
+                self.port_spin.setValue(3306)
+            self.windows_auth_chk.setChecked(False)
+
+    def _on_windows_auth_changed(self, checked: bool) -> None:
+        self.user_edit.setEnabled(not checked)
+        self.pass_edit.setEnabled(not checked)
+        if checked:
+            self.user_edit.clear()
+            self.pass_edit.clear()
+
     def clear(self) -> None:
         for widget in (
-            self.name_edit, self.host_edit, self.db_edit,
-            self.user_edit, self.pass_edit, self.instance_edit,
+            self.name_edit,
+            self.host_edit,
+            self.instance_edit,
+            self.db_edit,
+            self.user_edit,
+            self.pass_edit,
         ):
             widget.clear()
         self.port_spin.setValue(3306)
