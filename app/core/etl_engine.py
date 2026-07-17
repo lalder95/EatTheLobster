@@ -237,6 +237,7 @@ class ETLEngine:
         trigger_type: str,
     ) -> Optional[ImportRun]:
         run = run_repo.create(job_id=job.id, trigger_type=trigger_type)
+        completed_successfully = False
         try:
             logger.info(
                 "Starting schema export for job '%s' (id=%s, trigger=%s)",
@@ -269,6 +270,7 @@ class ETLEngine:
                 rows_imported=0,
                 rows_skipped=0,
             )
+            completed_successfully = True
             logger.info(
                 "Schema export complete for job '%s': output=%s",
                 job.name,
@@ -291,7 +293,8 @@ class ETLEngine:
             )
             raise
         finally:
-            self._ensure_run_finalized(run.id, "failed")
+            if not completed_successfully:
+                self._ensure_run_finalized(run.id, "failed")
 
     def _update_run_progress_with_retry(
         self,
