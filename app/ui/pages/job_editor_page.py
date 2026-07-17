@@ -59,6 +59,16 @@ class JobEditorDialog(QDialog):
         self._name_edit.setPlaceholderText("My Import Job")
         gen_form.addRow("Job Name *", self._name_edit)
 
+        self._job_type_combo = QComboBox()
+        self._job_type_combo.addItem("Import Job", userData="import")
+        self._job_type_combo.addItem(
+            "Schema Export Job", userData="schema_export"
+        )
+        self._job_type_combo.currentIndexChanged.connect(
+            self._sync_job_mode_ui
+        )
+        gen_form.addRow("Job Type *", self._job_type_combo)
+
         # Source type
         type_row = QHBoxLayout()
         self._radio_file = QRadioButton("Single File")
@@ -80,6 +90,20 @@ class JobEditorDialog(QDialog):
         path_row.addWidget(self._path_edit, stretch=1)
         path_row.addWidget(self._browse_btn)
         gen_form.addRow("Source Path *", path_row)
+
+        export_row = QHBoxLayout()
+        self._export_path_edit = QLineEdit()
+        self._export_path_edit.setPlaceholderText("C:/exports/schema.json")
+        self._export_browse_btn = QPushButton("Browse…")
+        self._export_browse_btn.setFixedWidth(80)
+        self._export_browse_btn.clicked.connect(self._browse_export_output)
+        export_row.addWidget(self._export_path_edit, stretch=1)
+        export_row.addWidget(self._export_browse_btn)
+        gen_form.addRow("Export File *", export_row)
+
+        self._export_format_combo = QComboBox()
+        self._export_format_combo.addItem("JSON", userData="json")
+        gen_form.addRow("Export Format *", self._export_format_combo)
 
         # Connection
         conn_row = QHBoxLayout()
@@ -214,6 +238,16 @@ class JobEditorDialog(QDialog):
 
         layout.addWidget(opts_box)
 
+        self._export_group = QGroupBox("Schema Export")
+        export_layout = QVBoxLayout(self._export_group)
+        export_note = QLabel(
+            "Export the connected database schema as tables and foreign-key relationships."
+        )
+        export_note.setWordWrap(True)
+        export_note.setStyleSheet("color: #888888;")
+        export_layout.addWidget(export_note)
+        layout.addWidget(self._export_group)
+
         # ── Column Mappings ──────────────────────────────────────────────────
         map_box = QGroupBox("Column Mappings")
         map_layout = QHBoxLayout(map_box)
@@ -229,6 +263,21 @@ class JobEditorDialog(QDialog):
         map_layout.addWidget(self._mapping_btn)
         layout.addWidget(map_box)
 
+        self._import_widgets = [
+            self._radio_file,
+            self._radio_dir,
+            self._path_edit,
+            self._browse_btn,
+            self._table_edit,
+            self._create_table_btn,
+            self._radio_append,
+            self._radio_overwrite,
+            self._date_chk,
+            self._date_col_edit,
+            self._ignore_chk,
+            self._mapping_btn,
+        ]
+
         # ── Buttons ──────────────────────────────────────────────────────────
         btn_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -240,6 +289,8 @@ class JobEditorDialog(QDialog):
             "primary"
         )
         layout.addWidget(btn_box)
+
+        self._sync_job_mode_ui()
 
     def _on_source_type_changed(self) -> None:
         is_file = self._radio_file.isChecked()
@@ -262,6 +313,16 @@ class JobEditorDialog(QDialog):
         if path:
             self._path_edit.setText(path)
 
+    def _browse_export_output(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Select Export File",
+            "",
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if path:
+            self._export_path_edit.setText(path)
+
     def _refresh_connections(self) -> None:
         from app.data.database import get_session
         from app.data.repositories import DbConnectionRepository
@@ -282,6 +343,18 @@ class JobEditorDialog(QDialog):
 
     def _on_freq_changed(self, index: int) -> None:
         self._freq_stack.setCurrentIndex(index)
+
+    def _sync_job_mode_ui(self) -> None:
+        is_export = self._job_type_combo.currentData() == "schema_export"
+        for widget in self._import_widgets:
+            widget.setEnabled(not is_export)
+        self._export_group.setVisible(is_export)
+        self._export_path_edit.setEnabled(is_export)
+        self._export_browse_btn.setEnabled(is_export)
+        self._export_format_combo.setEnabled(is_export)
+        self._conn_combo.setEnabled(True)
+        self._date_col_edit.setEnabled(is_export and self._date_chk.isChecked() or self._date_col_edit.isEnabled())
+        self._mapping_btn.setEnabled(not is_export)
 
     def _open_mappings(self) -> None:
         from app.ui.pages.mapping_page import MappingDialog
@@ -307,6 +380,19 @@ class JobEditorDialog(QDialog):
             self._name_edit.setText(job.name)
             self._path_edit.setText(job.source_path)
             self._table_edit.setText(job.target_table)
+            self._export_path_edit.setText(job.export_output_path or "")
+
+            export_format = (job.export_format or "json").lower()
+            for i in range(self._export_format_combo.count()):
+                if self._export_format_combo.itemData(i) == export_format:
+                    self._export_format_combo.setCurrentIndex(i)
+                    break
+
+            job_type = (getattr(job, "job_type", "import") or "import")
+            for i in range(self._job_type_combo.count()):
+                if self._job_type_combo.itemData(i) == job_type:
+                    self._job_type_combo.setCurrentIndex(i)
+                    break
 
             if job.source_type == "directory":
                 self._radio_dir.setChecked(True)
@@ -343,6 +429,7 @@ class JobEditorDialog(QDialog):
 
             self._ignore_chk.setChecked(job.ignore_previously_imported)
             self._enabled_chk.setChecked(job.enabled)
+            self._sync_job_mode_ui()
         finally:
             session.close()
 
@@ -527,30 +614,18 @@ class JobEditorDialog(QDialog):
         source_path = self._path_edit.text().strip()
         target_table = self._table_edit.text().strip()
         conn_id = self._conn_combo.currentData()
+        job_type = self._job_type_combo.currentData() or "import"
+        export_output_path = self._export_path_edit.text().strip()
+        export_format = self._export_format_combo.currentData() or "json"
 
         if not name:
             QMessageBox.warning(self, "Validation", "Job Name is required.")
-            return
-        if not source_path:
-            QMessageBox.warning(self, "Validation", "Source Path is required.")
-            return
-        if not target_table:
-            QMessageBox.warning(self, "Validation", "Target Table is required.")
             return
         if conn_id is None:
             QMessageBox.warning(
                 self,
                 "Validation",
                 "Please add a database connection in Settings first.",
-            )
-            return
-
-        if not _IDENTIFIER_RE.match(target_table):
-            QMessageBox.warning(
-                self,
-                "Validation",
-                "Target table name must start with a letter or underscore "
-                "and contain only letters, digits, and underscores.",
             )
             return
 
@@ -561,6 +636,37 @@ class JobEditorDialog(QDialog):
         ignore = self._ignore_chk.isChecked()
         enabled = self._enabled_chk.isChecked()
         freq_type, freq_cfg = self._build_frequency_config()
+
+        if job_type == "schema_export":
+            if not export_output_path:
+                QMessageBox.warning(
+                    self,
+                    "Validation",
+                    "Export File is required for schema export jobs.",
+                )
+                return
+            target_table = target_table or "schema_export"
+            source_path = source_path or ""
+        else:
+            if not source_path:
+                QMessageBox.warning(
+                    self, "Validation", "Source Path is required."
+                )
+                return
+            if not target_table:
+                QMessageBox.warning(
+                    self, "Validation", "Target Table is required."
+                )
+                return
+
+            if not _IDENTIFIER_RE.match(target_table):
+                QMessageBox.warning(
+                    self,
+                    "Validation",
+                    "Target table name must start with a letter or underscore "
+                    "and contain only letters, digits, and underscores.",
+                )
+                return
 
         from app.data.database import get_session
         from app.data.repositories import ImportJobRepository
@@ -573,6 +679,7 @@ class JobEditorDialog(QDialog):
                 job = repo.get_by_id(self._job_id)
                 if job:
                     job.name = name
+                    job.job_type = job_type
                     job.source_type = source_type
                     job.source_path = source_path
                     job.db_connection_id = conn_id
@@ -581,6 +688,8 @@ class JobEditorDialog(QDialog):
                     job.use_file_created_date = use_date
                     job.file_created_date_column = date_col
                     job.ignore_previously_imported = ignore
+                    job.export_output_path = export_output_path or None
+                    job.export_format = export_format
                     job.frequency_type = freq_type
                     job.frequency_config = freq_cfg
                     job.enabled = enabled
@@ -589,6 +698,7 @@ class JobEditorDialog(QDialog):
             else:
                 job = repo.create(
                     name=name,
+                    job_type=job_type,
                     source_type=source_type,
                     source_path=source_path,
                     db_connection_id=conn_id,
@@ -597,6 +707,8 @@ class JobEditorDialog(QDialog):
                     use_file_created_date=use_date,
                     file_created_date_column=date_col,
                     ignore_previously_imported=ignore,
+                    export_output_path=export_output_path or None,
+                    export_format=export_format,
                     frequency_type=freq_type,
                     frequency_config=freq_cfg,
                     enabled=enabled,

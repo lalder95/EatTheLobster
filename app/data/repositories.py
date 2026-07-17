@@ -175,6 +175,41 @@ class ImportRunRepository:
         self.session.refresh(run)
         return run
 
+    def update_progress_by_id(
+        self,
+        run_id: int,
+        files_processed: int,
+        rows_imported: int,
+        rows_skipped: int,
+    ) -> bool:
+        run = self.session.query(ImportRun).filter_by(id=run_id).first()
+        if run is None:
+            return False
+        run.files_processed = files_processed
+        run.rows_imported = rows_imported
+        run.rows_skipped = rows_skipped
+        self.session.commit()
+        return True
+
+    def complete_by_id(
+        self,
+        run_id: int,
+        status: str,
+        files_processed: int = 0,
+        rows_imported: int = 0,
+        rows_skipped: int = 0,
+    ) -> bool:
+        run = self.session.query(ImportRun).filter_by(id=run_id).first()
+        if run is None:
+            return False
+        run.status = status
+        run.completed_at = datetime.datetime.utcnow()
+        run.files_processed = files_processed
+        run.rows_imported = rows_imported
+        run.rows_skipped = rows_skipped
+        self.session.commit()
+        return True
+
     def complete(
         self,
         run: ImportRun,

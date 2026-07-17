@@ -38,6 +38,13 @@ def _format_frequency(job) -> str:
     return "—"
 
 
+def _format_job_type(job) -> str:
+    job_type = getattr(job, "job_type", "import") or "import"
+    if job_type == "schema_export":
+        return "Schema Export"
+    return "Import"
+
+
 _STATUS_COLORS = {
     "success": "#4caf50",
     "partial": "#ff9800",
@@ -64,7 +71,7 @@ class JobsPage(QWidget):
 
         # Toolbar
         toolbar = QHBoxLayout()
-        title = QLabel("Import Jobs")
+        title = QLabel("Jobs")
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         toolbar.addWidget(title)
         toolbar.addStretch()
@@ -151,9 +158,9 @@ class JobsPage(QWidget):
 
                 cells = [
                     job.name,
-                    job.source_type.capitalize(),
-                    job.source_path,
-                    job.target_table,
+                    _format_job_type(job),
+                    job.export_output_path if getattr(job, "job_type", "import") == "schema_export" else job.source_path,
+                    job.target_table if getattr(job, "job_type", "import") != "schema_export" else "—",
                     _format_frequency(job),
                     last_run_str,
                     last_status,
@@ -218,11 +225,14 @@ class JobsPage(QWidget):
         edit_btn.setEnabled(not is_running)
         edit_btn.clicked.connect(lambda: self._edit_job(job.id))
 
-        reset_btn = QPushButton("Reset")
+        reset_btn = QPushButton("Export" if getattr(job, "job_type", "import") == "schema_export" else "Reset")
         reset_btn.setFixedWidth(48)
         reset_btn.setStyleSheet(compact_style)
         reset_btn.setEnabled(not is_running)
-        reset_btn.setToolTip("Purge target table and reimport all source files")
+        reset_btn.setToolTip(
+            "Run the schema export now" if getattr(job, "job_type", "import") == "schema_export"
+            else "Purge target table and reimport all source files"
+        )
         reset_btn.clicked.connect(lambda: self._reset_job(job.id, job.name))
 
         toggle_label = "Disable" if job.enabled else "Enable"
@@ -287,13 +297,31 @@ class JobsPage(QWidget):
     def _reset_job(self, job_id: int, job_name: str) -> None:
         from app.scheduler.scheduler_service import SchedulerService
 
-        reply = QMessageBox.question(
-            self,
-            "Purge And Reimport",
-            f"Purge the target table and reimport all files for '{job_name}'?\n\n"
-            "This clears the job's imported-file history and reloads from the source.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
+        from app.data.database import get_session
+        from app.data.repositories import ImportJobRepository
+
+        session = get_session()
+        try:
+            job = ImportJobRepository(session).get_by_id(job_id)
+            job_type = getattr(job, "job_type", "import") if job else "import"
+        finally:
+            session.close()
+
+        if job_type == "schema_export":
+            reply = QMessageBox.question(
+                self,
+                "Run Schema Export",
+                f"Run the schema export job '{job_name}' now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+        else:
+            reply = QMessageBox.question(
+                self,
+                "Purge And Reimport",
+                f"Purge the target table and reimport all files for '{job_name}'?\n\n"
+                "This clears the job's imported-file history and reloads from the source.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
         if reply != QMessageBox.StandardButton.Yes:
             return
 
@@ -314,8 +342,8 @@ class JobsPage(QWidget):
             )
         QMessageBox.information(
             self,
-            "Reimport Started",
-            "The table purge and reimport has started. Check the Logs page for results.",
+            "Run Started",
+            "The job has started. Check the Logs page for results.",
         )
         self.refresh()
 

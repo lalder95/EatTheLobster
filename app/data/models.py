@@ -47,6 +47,8 @@ class ImportJob(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(256), nullable=False)
+    # 'import' or 'schema_export'
+    job_type = Column(String(32), nullable=False, default="import")
     # 'file' or 'directory'
     source_type = Column(String(16), nullable=False)
     source_path = Column(Text, nullable=False)
@@ -60,6 +62,9 @@ class ImportJob(Base):
     # Target column name to receive the file-created timestamp
     file_created_date_column = Column(String(128), nullable=True)
     ignore_previously_imported = Column(Boolean, nullable=False, default=True)
+    # Schema export settings (used when job_type == 'schema_export')
+    export_output_path = Column(Text, nullable=True)
+    export_format = Column(String(16), nullable=True, default="json")
     # 'interval', 'daily', 'weekly'
     frequency_type = Column(String(32), nullable=False)
     # JSON: {"minutes": 30} | {"time": "08:00"} | {"weekday": 0, "time": "08:00"}

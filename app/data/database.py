@@ -61,6 +61,19 @@ def _migrate_db_connections() -> None:
                 conn.execute(
                     text(f"ALTER TABLE db_connections ADD COLUMN {col_name} {col_def}")
                 )
+
+        rows = conn.execute(text("PRAGMA table_info(import_jobs)")).fetchall()
+        existing_jobs = {row[1] for row in rows}
+        job_migrations = [
+            ("job_type", "VARCHAR(32) NOT NULL DEFAULT 'import'"),
+            ("export_output_path", "TEXT NULL"),
+            ("export_format", "VARCHAR(16) NULL DEFAULT 'json'"),
+        ]
+        for col_name, col_def in job_migrations:
+            if col_name not in existing_jobs:
+                conn.execute(
+                    text(f"ALTER TABLE import_jobs ADD COLUMN {col_name} {col_def}")
+                )
         conn.commit()
 
 

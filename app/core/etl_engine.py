@@ -11,6 +11,7 @@ from app.core.date_stamp_service import DateStampService
 from app.core.dedupe_service import DedupeService
 from app.core.file_reader import FileReader, SUPPORTED_EXTENSIONS
 from app.core.mapping_service import MappingService
+from app.core.schema_export_service import SchemaExportService
 from app.data.database import get_target_engine, get_session, quote_name
 from app.data.models import ImportRun
 from app.data.repositories import (
@@ -31,6 +32,7 @@ class ETLEngine:
         self.dedupe_service = DedupeService()
         self.date_stamp_service = DateStampService()
         self.mapping_service = MappingService()
+        self.schema_export_service = SchemaExportService()
 
     def run_job(
         self,
@@ -39,8 +41,6 @@ class ETLEngine:
         force_full_refresh: bool = False,
     ) -> Optional[ImportRun]:
         session = get_session()
-        run: Optional[ImportRun] = None
-        final_status: Optional[str] = None
         try:
             job_repo = ImportJobRepository(session)
             run_repo = ImportRunRepository(session)
@@ -51,6 +51,15 @@ class ETLEngine:
             if not job:
                 logger.error(f"Job {job_id} not found")
                 return None
+
+            job_type = getattr(job, "job_type", "import") or "import"
+            if job_type == "schema_export":
+                return self._run_schema_export_job(
+                    job=job,
+                    run_repo=run_repo,
+                    error_repo=error_repo,
+                    trigger_type=trigger_type,
+                )
 
             logger.info(
                 f"Starting run for job '{job.name}' "
@@ -217,29 +226,72 @@ class ETLEngine:
                 f"files={processed}, rows={total_rows}, skipped={total_skipped}"
             )
             return run
+        finally:
+            session.close()
 
+    def _run_schema_export_job(
+        self,
+        job,
+        run_repo: ImportRunRepository,
+        error_repo: ImportErrorRepository,
+        trigger_type: str,
+    ) -> Optional[ImportRun]:
+        run = run_repo.create(job_id=job.id, trigger_type=trigger_type)
+        try:
+            logger.info(
+                "Starting schema export for job '%s' (id=%s, trigger=%s)",
+                job.name,
+                job.id,
+                trigger_type,
+            )
+
+            output_path = getattr(job, "export_output_path", None)
+            export_format = (getattr(job, "export_format", None) or "json").lower()
+
+            if not output_path:
+                raise ValueError(
+                    "Schema export jobs require an export_output_path."
+                )
+            if export_format != "json":
+                raise ValueError(
+                    "Only JSON schema exports are currently supported."
+                )
+
+            output_file = self.schema_export_service.export_to_json(
+                job.db_connection,
+                output_path,
+            )
+
+            self._complete_run_with_retry(
+                run_id=run.id,
+                status="success",
+                files_processed=1,
+                rows_imported=0,
+                rows_skipped=0,
+            )
+            logger.info(
+                "Schema export complete for job '%s': output=%s",
+                job.name,
+                output_file,
+            )
+            return run
         except Exception as exc:
-            logger.exception(f"Fatal error in job {job_id}: {exc}")
-            final_status = "failed"
-            if run is not None:
-                try:
-                    ImportErrorRepository(session).create(
-                        run_id=run.id,
-                        error_type=type(exc).__name__,
-                        error_message=str(exc),
-                    )
-                    self._complete_run_with_retry(
-                        run_id=run.id,
-                        status="failed",
-                    )
-                except Exception:
-                    pass
+            logger.exception("Schema export job %s failed: %s", job.id, exc)
+            error_repo.create(
+                run_id=run.id,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
+            self._complete_run_with_retry(
+                run_id=run.id,
+                status="failed",
+                files_processed=0,
+                rows_imported=0,
+                rows_skipped=0,
+            )
             raise
         finally:
-            run_id = run.id if run is not None else None
-            session.close()
-            if run_id is not None:
-                self._ensure_run_finalized(run_id, final_status or "failed")
+            self._ensure_run_finalized(run.id, "failed")
 
     def _update_run_progress_with_retry(
         self,
@@ -331,9 +383,9 @@ class ETLEngine:
             fallback_session = get_session()
             try:
                 run_repo = ImportRunRepository(fallback_session)
-                fixed = run_repo.finalize_running_runs(
-                    status=fallback_status,
+                fixed = run_repo.complete_by_id(
                     run_id=run_id,
+                    status=fallback_status,
                 )
                 if fixed:
                     logger.warning(
