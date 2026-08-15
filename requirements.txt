@@ -6,5 +6,7 @@ PyMySQL>=1.1.0
 pyodbc>=4.0.39
 APScheduler>=3.10.0
 cryptography>=42.0.0
+keyring>=25.0.0
+openai>=1.40.0
 tzlocal>=4.0
 pytest>=7.4.0

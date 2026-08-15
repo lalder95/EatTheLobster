@@ -40,6 +40,27 @@ class DbConnection(Base):
     jobs = relationship(
         "ImportJob", back_populates="db_connection", cascade="all, delete-orphan"
     )
+    query_runs = relationship("QueryRun", back_populates="db_connection")
+
+
+class QueryAutomationSettings(Base):
+    __tablename__ = "query_automation_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    query_folder_path = Column(Text, nullable=False, default="")
+    default_db_connection_id = Column(
+        Integer, ForeignKey("db_connections.id"), nullable=True
+    )
+    archive_folder_name = Column(String(64), nullable=False, default="archive")
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(
+        DateTime,
+        default=datetime.datetime.utcnow,
+        onupdate=datetime.datetime.utcnow,
+    )
+
+    default_db_connection = relationship("DbConnection")
 
 
 class ImportJob(Base):
@@ -126,6 +147,28 @@ class ImportRun(Base):
         "ImportError", back_populates="run", cascade="all, delete-orphan"
     )
     imported_files = relationship("ImportedFile", back_populates="run")
+
+
+class QueryRun(Base):
+    __tablename__ = "query_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    query_name = Column(String(256), nullable=False)
+    query_file_path = Column(Text, nullable=False)
+    db_connection_id = Column(Integer, ForeignKey("db_connections.id"), nullable=True)
+    db_connection_name = Column(String(256), nullable=True)
+    started_at = Column(
+        DateTime, nullable=False, default=datetime.datetime.utcnow
+    )
+    completed_at = Column(DateTime, nullable=True)
+    status = Column(String(16), nullable=False, default="running")
+    row_count = Column(Integer, nullable=False, default=0)
+    output_file_path = Column(Text, nullable=True)
+    archived_file_path = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    trigger_type = Column(String(16), nullable=False, default="scheduled")
+
+    db_connection = relationship("DbConnection", back_populates="query_runs")
 
 
 class ImportError(Base):

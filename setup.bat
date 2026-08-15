@@ -12,5 +12,5 @@ echo NOTE: SQL Server connections require "ODBC Driver 18 for SQL Server".
 echo       If you plan to connect to MS SQL Server, download and install it from:
 echo       https://aka.ms/downloadmsodbcsql
 echo.
-echo Done. Run run.bat to start the application.
+echo Done. Run run.bat for the ETL app or run_chatbot.bat for the SQL chatbot.
 pause

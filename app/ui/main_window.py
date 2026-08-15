@@ -194,15 +194,18 @@ class MainWindow(QMainWindow):
         # Lazy-import pages to avoid circular imports at module load time
         from app.ui.pages.jobs_page import JobsPage
         from app.ui.pages.logs_page import LogsPage
+        from app.ui.pages.query_runner_page import QueryRunnerPage
         from app.ui.pages.config_page import ConfigPage
 
         self._jobs_page = JobsPage(self)
         self._logs_page = LogsPage(self)
+        self._query_page = QueryRunnerPage(self)
         self._config_page = ConfigPage(self)
 
         self._stack.addWidget(self._jobs_page)   # index 0
         self._stack.addWidget(self._logs_page)   # index 1
-        self._stack.addWidget(self._config_page) # index 2
+        self._stack.addWidget(self._query_page)   # index 2
+        self._stack.addWidget(self._config_page)  # index 3
 
         self._nav_buttons[0].setChecked(True)
 
@@ -234,7 +237,12 @@ class MainWindow(QMainWindow):
         layout.addSpacing(8)
 
         self._nav_buttons: list[_NavButton] = []
-        nav_items = [("  Jobs", 0), ("  Logs", 1), ("  Settings", 2)]
+        nav_items = [
+            ("  Jobs", 0),
+            ("  Logs", 1),
+            ("  Query Automation", 2),
+            ("  Settings", 3),
+        ]
         for label, index in nav_items:
             btn = _NavButton(label)
             btn.clicked.connect(
@@ -270,6 +278,10 @@ class MainWindow(QMainWindow):
             self._jobs_page.refresh()
         elif index == 1:
             self._logs_page.refresh()
+        elif index == 2:
+            self._query_page.refresh()
+        elif index == 3:
+            self._config_page._refresh_list()
 
     def _start_status_timer(self) -> None:
         timer = QTimer(self)

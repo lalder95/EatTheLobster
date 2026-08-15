@@ -10,6 +10,8 @@ from app.data.models import (
     ImportError,
     ImportJob,
     ImportRun,
+    QueryAutomationSettings,
+    QueryRun,
 )
 
 
@@ -66,6 +68,41 @@ class DbConnectionRepository:
             self.session.commit()
 
 
+class QueryAutomationSettingsRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self) -> QueryAutomationSettings:
+        settings = (
+            self.session.query(QueryAutomationSettings)
+            .options(joinedload(QueryAutomationSettings.default_db_connection))
+            .first()
+        )
+        if settings is None:
+            settings = QueryAutomationSettings()
+            self.session.add(settings)
+            self.session.commit()
+            self.session.refresh(settings)
+        return settings
+
+    def save(
+        self,
+        query_folder_path: str,
+        default_db_connection_id: int | None,
+        enabled: bool = True,
+        archive_folder_name: str = "archive",
+    ) -> QueryAutomationSettings:
+        settings = self.get()
+        settings.query_folder_path = query_folder_path
+        settings.default_db_connection_id = default_db_connection_id
+        settings.enabled = enabled
+        settings.archive_folder_name = archive_folder_name
+        settings.updated_at = datetime.datetime.utcnow()
+        self.session.commit()
+        self.session.refresh(settings)
+        return settings
+
+
 class ImportJobRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -115,6 +152,62 @@ class ImportJobRepository:
         if job:
             self.session.delete(job)
             self.session.commit()
+
+
+class QueryRunRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(
+        self,
+        query_name: str,
+        query_file_path: str,
+        trigger_type: str = "scheduled",
+        db_connection_id: int | None = None,
+        db_connection_name: str | None = None,
+    ) -> QueryRun:
+        run = QueryRun(
+            query_name=query_name,
+            query_file_path=query_file_path,
+            trigger_type=trigger_type,
+            db_connection_id=db_connection_id,
+            db_connection_name=db_connection_name,
+            started_at=datetime.datetime.utcnow(),
+        )
+        self.session.add(run)
+        self.session.commit()
+        self.session.refresh(run)
+        return run
+
+    def complete_by_id(
+        self,
+        run_id: int,
+        status: str,
+        row_count: int = 0,
+        output_file_path: str | None = None,
+        archived_file_path: str | None = None,
+        error_message: str | None = None,
+    ) -> bool:
+        run = self.session.query(QueryRun).filter_by(id=run_id).first()
+        if run is None:
+            return False
+        run.status = status
+        run.completed_at = datetime.datetime.utcnow()
+        run.row_count = row_count
+        run.output_file_path = output_file_path
+        run.archived_file_path = archived_file_path
+        run.error_message = error_message
+        self.session.commit()
+        return True
+
+    def get_recent(self, limit: int = 100) -> list[QueryRun]:
+        return (
+            self.session.query(QueryRun)
+            .options(joinedload(QueryRun.db_connection))
+            .order_by(QueryRun.started_at.desc())
+            .limit(limit)
+            .all()
+        )
 
 
 class ColumnMappingRepository:
