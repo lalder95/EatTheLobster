@@ -144,14 +144,23 @@ class _NavButton(QPushButton):
 class _RunJobThread(QThread):
     finished = Signal(int)  # job_id
 
-    def __init__(self, job_id: int, parent=None) -> None:
+    def __init__(
+        self,
+        job_id: int,
+        force_full_refresh: bool = False,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self._job_id = job_id
+        self._force_full_refresh = force_full_refresh
 
     def run(self) -> None:
         from app.scheduler.scheduler_service import SchedulerService
 
-        SchedulerService.get_instance().trigger_now(self._job_id)
+        SchedulerService.get_instance().trigger_now(
+            self._job_id,
+            force_full_refresh=self._force_full_refresh,
+        )
         self.finished.emit(self._job_id)
 
 
@@ -310,8 +319,16 @@ class MainWindow(QMainWindow):
     def navigate_to_logs(self) -> None:
         self._navigate(1, self._nav_buttons[1])
 
-    def run_job_async(self, job_id: int) -> None:
-        thread = _RunJobThread(job_id, self)
+    def run_job_async(
+        self,
+        job_id: int,
+        force_full_refresh: bool = False,
+    ) -> None:
+        thread = _RunJobThread(
+            job_id,
+            force_full_refresh=force_full_refresh,
+            parent=self,
+        )
         thread.finished.connect(lambda _jid: self._jobs_page.refresh())
         self._threads.append(thread)
         thread.start()
