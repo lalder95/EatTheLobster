@@ -158,6 +158,9 @@ def test_chatbot_prompt_requires_plain_language() -> None:
     assert "TRY_CONVERT(decimal(18,2)" in prompt
     assert "which year they mean" in prompt
     assert "Never silently choose a year" in prompt
+    assert "department_code/department_name" in prompt
+    assert "code, the description, or both" in prompt
+    assert "Do not silently choose one member" in prompt
 
 
 def test_settings_repository_roundtrip() -> None:
