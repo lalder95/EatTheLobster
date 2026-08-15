@@ -159,3 +159,40 @@ def test_second_scan_skips_archived_files(
         assert session.query(QueryRun).count() == 1
     finally:
         session.close()
+
+
+def test_scan_once_strips_markdown_and_go_batches(
+    service, metadata_session_factory, monkeypatch, tmp_path
+):
+    folder = tmp_path / "queries"
+    folder.mkdir()
+    sql_file = folder / "fenced.sql"
+    sql_file.write_text(
+        """Here is the report query:
+```sql
+create table temp_results (value integer);
+GO
+insert into temp_results (value) values (42);
+GO
+select value from temp_results;
+```
+""",
+        encoding="utf-8",
+    )
+
+    target_engine = create_engine("sqlite:///:memory:")
+    _configure_metadata(metadata_session_factory, folder)
+    monkeypatch.setattr(
+        "app.core.query_automation_service.get_session",
+        metadata_session_factory,
+    )
+    monkeypatch.setattr(
+        "app.core.query_automation_service.get_target_engine",
+        lambda _conn: target_engine,
+    )
+
+    processed = service.scan_once(trigger_type="manual")
+
+    assert processed == 1
+    assert (folder / "fenced.xlsx").exists()
+    assert (folder / "archive" / "fenced.sql").exists()

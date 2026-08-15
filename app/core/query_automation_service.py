@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import re
 import shutil
 import threading
 from typing import Optional
@@ -17,6 +18,7 @@ from app.data.repositories import (
 )
 
 logger = logging.getLogger(__name__)
+_GO_BATCH_RE = re.compile(r"^\s*GO\s*$", re.IGNORECASE | re.MULTILINE)
 
 
 class QueryAutomationService:
@@ -150,18 +152,26 @@ class QueryAutomationService:
             if conn is None:
                 raise ValueError("Configured database connection was not found")
 
-            query_text = file_path.read_text(encoding="utf-8-sig").strip()
+            query_text = self._normalize_query_text(
+                file_path.read_text(encoding="utf-8-sig")
+            )
             if not query_text:
                 raise ValueError("Query file is empty")
 
             engine = get_target_engine(conn)
             try:
                 with engine.connect() as connection:
-                    result = connection.execute(text(query_text))
-                    if not result.returns_rows:
+                    rows = []
+                    columns: list[str] = []
+                    found_result_set = False
+                    for batch in self._split_query_batches(query_text):
+                        result = connection.execute(text(batch))
+                        if result.returns_rows:
+                            rows = result.fetchall()
+                            columns = list(result.keys())
+                            found_result_set = True
+                    if not found_result_set:
                         raise ValueError("Query did not return a result set")
-                    rows = result.fetchall()
-                    columns = list(result.keys())
             finally:
                 engine.dispose()
 
@@ -208,6 +218,18 @@ class QueryAutomationService:
             return False
         finally:
             session.close()
+
+    def _normalize_query_text(self, raw_text: str) -> str:
+        text_value = raw_text.strip()
+        fence_match = re.search(r"```(?:sql)?\s*(.*?)```", text_value, re.IGNORECASE | re.DOTALL)
+        if fence_match:
+            text_value = fence_match.group(1).strip()
+        text_value = text_value.strip("`\n\r\t ")
+        return text_value
+
+    def _split_query_batches(self, query_text: str) -> list[str]:
+        batches = [batch.strip() for batch in _GO_BATCH_RE.split(query_text)]
+        return [batch for batch in batches if batch]
 
     def _archive_source_file(
         self,
