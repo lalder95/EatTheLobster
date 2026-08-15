@@ -9,6 +9,7 @@ from typing import Optional
 
 import pandas as pd
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.data.database import get_session, get_target_engine
 from app.data.repositories import (
@@ -140,31 +141,48 @@ class QueryAutomationService:
         run_repo = QueryRunRepository(session)
         db_repo = DbConnectionRepository(session)
 
+        conn = db_repo.get_by_id(settings.default_db_connection_id)
+        if conn is None:
+            raise ValueError("Configured database connection was not found")
+
         run = run_repo.create(
             query_name=file_path.stem,
             query_file_path=str(file_path),
             trigger_type=trigger_type,
             db_connection_id=settings.default_db_connection_id,
+            db_connection_name=getattr(conn, "name", None),
         )
 
         try:
-            conn = db_repo.get_by_id(settings.default_db_connection_id)
-            if conn is None:
-                raise ValueError("Configured database connection was not found")
-
+            query_text = ""
             query_text = self._normalize_query_text(
                 file_path.read_text(encoding="utf-8-sig")
             )
             if not query_text:
                 raise ValueError("Query file is empty")
 
+            logger.info(
+                "Executing query file %s against connection %s (%s)",
+                file_path.name,
+                getattr(conn, "name", "unknown"),
+                getattr(conn, "database_name", "unknown"),
+            )
+
             engine = get_target_engine(conn)
             try:
                 with engine.connect() as connection:
                     rows = []
                     columns: list[str] = []
+                    batches = self._split_query_batches(query_text)
                     found_result_set = False
-                    for batch in self._split_query_batches(query_text):
+                    for index, batch in enumerate(batches, start=1):
+                        logger.debug(
+                            "Executing batch %s/%s for %s: %s",
+                            index,
+                            len(batches),
+                            file_path.name,
+                            batch[:500],
+                        )
                         result = connection.execute(text(batch))
                         if result.returns_rows:
                             rows = result.fetchall()
@@ -207,13 +225,24 @@ class QueryAutomationService:
                 len(frame),
             )
             return True
-        except Exception as exc:
-            logger.exception("Query file %s failed: %s", file_path, exc)
+        except SQLAlchemyError as exc:
+            failure_message = self._build_failure_message(file_path, conn, exc, query_text)
+            logger.exception("Query file %s failed: %s", file_path, failure_message)
             run_repo.complete_by_id(
                 run.id,
                 status="failed",
                 row_count=0,
-                error_message=str(exc),
+                error_message=failure_message,
+            )
+            return False
+        except Exception as exc:
+            failure_message = self._build_failure_message(file_path, conn, exc, query_text)
+            logger.exception("Query file %s failed: %s", file_path, failure_message)
+            run_repo.complete_by_id(
+                run.id,
+                status="failed",
+                row_count=0,
+                error_message=failure_message,
             )
             return False
         finally:
@@ -230,6 +259,22 @@ class QueryAutomationService:
     def _split_query_batches(self, query_text: str) -> list[str]:
         batches = [batch.strip() for batch in _GO_BATCH_RE.split(query_text)]
         return [batch for batch in batches if batch]
+
+    def _build_failure_message(self, file_path, conn, exc, query_text: str) -> str:
+        query_preview = " ".join((query_text or "").split())[:500]
+        conn_name = getattr(conn, "name", "unknown") if conn is not None else "unknown"
+        database_name = getattr(conn, "database_name", "unknown") if conn is not None else "unknown"
+        db_type = getattr(conn, "db_type", "mysql") if conn is not None else "unknown"
+        details = [
+            f"{type(exc).__name__}: {exc}",
+            f"file={file_path.name}",
+            f"connection={conn_name}",
+            f"database={database_name}",
+            f"db_type={db_type}",
+        ]
+        if query_preview:
+            details.append(f"sql={query_preview}")
+        return " | ".join(details)
 
     def _archive_source_file(
         self,

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -129,6 +130,15 @@ class QueryRunnerPage(QWidget):
         hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         runs_layout.addWidget(self._runs_table)
+
+        self._error_text = QTextEdit()
+        self._error_text.setReadOnly(True)
+        self._error_text.setPlaceholderText("Select a failed run to view details…")
+        self._error_text.setStyleSheet(
+            "background: #1a1a1a; color: #dddddd; border: 1px solid #3a3a3a; font-family: Consolas, monospace;"
+        )
+        self._runs_table.itemSelectionChanged.connect(self._on_run_selected)
+        runs_layout.addWidget(self._error_text)
         layout.addWidget(runs_box, stretch=1)
 
     def refresh(self) -> None:
@@ -201,6 +211,7 @@ class QueryRunnerPage(QWidget):
             session.close()
 
         self._runs_table.setRowCount(0)
+        self._error_text.clear()
         for run in runs:
             row = self._runs_table.rowCount()
             self._runs_table.insertRow(row)
@@ -229,6 +240,33 @@ class QueryRunnerPage(QWidget):
                         )
                     )
                 self._runs_table.setItem(row, col, item)
+
+    def _on_run_selected(self) -> None:
+        selected = self._runs_table.selectedItems()
+        if not selected:
+            self._error_text.clear()
+            return
+
+        run_id = selected[0].data(Qt.ItemDataRole.UserRole)
+        if run_id is None:
+            return
+
+        from app.data.database import get_session
+        from app.data.repositories import QueryRunRepository
+
+        session = get_session()
+        try:
+            runs = QueryRunRepository(session).get_recent(limit=500)
+        finally:
+            session.close()
+
+        for run in runs:
+            if run.id == run_id:
+                if run.error_message:
+                    self._error_text.setPlainText(run.error_message)
+                else:
+                    self._error_text.setPlainText("No error details for this run.")
+                return
 
     def _browse_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select Query Folder")
