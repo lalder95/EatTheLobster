@@ -48,6 +48,48 @@ def test_cleanup_dry_run_preserves_expired_files(tmp_path):
     assert old_sql.exists()
 
 
+def test_cleanup_deletes_only_expired_top_level_report_outputs(tmp_path):
+    old_csv = tmp_path / "old.csv"
+    old_xlsx = tmp_path / "old.xlsx"
+    current_csv = tmp_path / "current.csv"
+    old_sql = tmp_path / "old.sql"
+    nested_dir = tmp_path / "archive"
+    nested_dir.mkdir()
+    nested_xlsx = nested_dir / "old.xlsx"
+    for path in (old_csv, old_xlsx, current_csv, old_sql, nested_xlsx):
+        path.write_text("data", encoding="utf-8")
+
+    now = datetime(2026, 8, 15, 12, 0, 0)
+    for path in (old_csv, old_xlsx, old_sql, nested_xlsx):
+        _set_modified_at(path, now - timedelta(days=91))
+    _set_modified_at(current_csv, now - timedelta(days=90))
+
+    removed = SqlArchiveCleanupService().cleanup_report_outputs(tmp_path, now=now)
+
+    assert removed == [old_csv, old_xlsx]
+    assert not old_csv.exists()
+    assert not old_xlsx.exists()
+    assert current_csv.exists()
+    assert old_sql.exists()
+    assert nested_xlsx.exists()
+
+
+def test_report_output_cleanup_dry_run_preserves_expired_files(tmp_path):
+    old_report = tmp_path / "old.xlsx"
+    old_report.write_text("data", encoding="utf-8")
+    now = datetime(2026, 8, 15, 12, 0, 0)
+    _set_modified_at(old_report, now - timedelta(days=91))
+
+    removed = SqlArchiveCleanupService().cleanup_report_outputs(
+        tmp_path,
+        dry_run=True,
+        now=now,
+    )
+
+    assert removed == [old_report]
+    assert old_report.exists()
+
+
 def test_cleanup_ignores_missing_archive_folder(tmp_path):
     assert SqlArchiveCleanupService().cleanup(tmp_path) == []
 

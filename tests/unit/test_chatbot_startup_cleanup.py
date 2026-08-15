@@ -31,6 +31,10 @@ def test_startup_cleanup_uses_query_automation_archive_settings(monkeypatch, tmp
             cleanup_calls.append(kwargs)
             return [tmp_path / "archive" / "old.sql"]
 
+        def cleanup_report_outputs(self, **kwargs):
+            cleanup_calls.append(kwargs)
+            return [tmp_path / "old.xlsx"]
+
     monkeypatch.setattr(chatbot_main, "init_query_automation_db", lambda: None)
     monkeypatch.setattr(chatbot_main, "get_query_automation_session", lambda: session)
     monkeypatch.setattr(chatbot_main, "QueryAutomationSettingsRepository", _SettingsRepository)
@@ -38,14 +42,18 @@ def test_startup_cleanup_uses_query_automation_archive_settings(monkeypatch, tmp
 
     deleted = chatbot_main.cleanup_sql_archive_on_startup()
 
-    assert deleted == 1
+    assert deleted == 2
     assert session.closed is True
     assert cleanup_calls == [
         {
             "query_folder": str(tmp_path),
             "archive_folder_name": "archive",
             "retention_days": 90,
-        }
+        },
+        {
+            "query_folder": str(tmp_path),
+            "retention_days": 90,
+        },
     ]
 
 

@@ -45,17 +45,28 @@ def main() -> int:
             print("Query folder is not configured; nothing to clean.")
             return 0
 
-        removed = SqlArchiveCleanupService().cleanup(
+        cleanup_service = SqlArchiveCleanupService()
+        removed_archived_sql = cleanup_service.cleanup(
             query_folder=settings.query_folder_path,
             archive_folder_name=settings.archive_folder_name or "archive",
+            retention_days=args.days,
+            dry_run=args.dry_run,
+        )
+        removed_report_outputs = cleanup_service.cleanup_report_outputs(
+            query_folder=settings.query_folder_path,
             retention_days=args.days,
             dry_run=args.dry_run,
         )
     finally:
         session.close()
 
+    removed = [*removed_archived_sql, *removed_report_outputs]
     action = "Would delete" if args.dry_run else "Deleted"
-    print(f"{action} {len(removed)} archived SQL file(s) older than {args.days} day(s).")
+    print(
+        f"{action} {len(removed)} expired file(s) older than {args.days} day(s): "
+        f"{len(removed_archived_sql)} archived SQL file(s) and "
+        f"{len(removed_report_outputs)} CSV/XLSX report file(s)."
+    )
     for path in removed:
         print(f" - {path}")
     logger.info(

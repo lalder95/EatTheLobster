@@ -28,16 +28,27 @@ def cleanup_sql_archive_on_startup() -> int:
                 logger.info("SQL archive cleanup skipped; query folder is not configured.")
                 return 0
 
-            removed = SqlArchiveCleanupService().cleanup(
+            cleanup_service = SqlArchiveCleanupService()
+            removed_archived_sql = cleanup_service.cleanup(
                 query_folder=settings.query_folder_path,
                 archive_folder_name=settings.archive_folder_name or "archive",
+                retention_days=90,
+            )
+            removed_report_outputs = cleanup_service.cleanup_report_outputs(
+                query_folder=settings.query_folder_path,
                 retention_days=90,
             )
         finally:
             session.close()
 
-        logger.info("Deleted %s expired archived SQL file(s) on chatbot startup.", len(removed))
-        return len(removed)
+        removed_count = len(removed_archived_sql) + len(removed_report_outputs)
+        logger.info(
+            "Deleted %s expired file(s) on chatbot startup: %s archived SQL file(s), %s CSV/XLSX report file(s).",
+            removed_count,
+            len(removed_archived_sql),
+            len(removed_report_outputs),
+        )
+        return removed_count
     except Exception:
         logger.exception("SQL archive cleanup failed during chatbot startup.")
         return 0
