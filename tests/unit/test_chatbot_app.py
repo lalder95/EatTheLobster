@@ -156,7 +156,8 @@ def test_chatbot_prompt_requires_plain_language() -> None:
     assert "aggregate by store" in prompt
     assert "sort from highest to lowest" in prompt
     assert "TRY_CONVERT(decimal(18,2)" in prompt
-    assert "TRY_CONVERT(date" in prompt
+    assert "which year they mean" in prompt
+    assert "Never silently choose a year" in prompt
 
 
 def test_settings_repository_roundtrip() -> None:

@@ -131,10 +131,11 @@ class SchemaExportService:
         elif is_date_name and is_text:
             metadata.update(
                 logical_type="date",
-                format_hint="date stored as text",
+                format_hint="MM/dd/yyyy date stored as text",
                 is_date_filter_safe=False,
                 sql_conversion_hint=(
-                    f"TRY_CONVERT(date, [{column_name}])"
+                    "TRY_CONVERT(date, "
+                    f"LTRIM(RTRIM([{column_name}])), 101)"
                 ),
             )
         elif is_percentage_name and (is_text or is_decimal or is_integer):

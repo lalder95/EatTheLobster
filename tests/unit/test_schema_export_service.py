@@ -61,6 +61,8 @@ def test_build_schema_snapshot_and_export_json(tmp_path, monkeypatch):
     assert "TRY_CONVERT(decimal(18,2)" in columns["net_sales"]["sql_conversion_hint"]
     assert columns["sale_date"]["logical_type"] == "date"
     assert columns["sale_date"]["is_date_filter_safe"] is False
+    assert columns["sale_date"]["format_hint"] == "MM/dd/yyyy date stored as text"
+    assert "LTRIM(RTRIM([sale_date])), 101" in columns["sale_date"]["sql_conversion_hint"]
 
     output = tmp_path / "schema.json"
     result = service.export_to_json(conn, output)
