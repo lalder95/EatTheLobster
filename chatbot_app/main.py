@@ -43,7 +43,7 @@ def cleanup_sql_archive_on_startup() -> int:
 
         removed_count = len(removed_archived_sql) + len(removed_report_outputs)
         logger.info(
-            "Deleted %s expired file(s) on chatbot startup: %s archived SQL file(s), %s CSV/XLSX report file(s).",
+            "Deleted %s expired file(s) on chatbot startup: %s archived SQL file(s), %s primary SQL/CSV/XLSX file(s).",
             removed_count,
             len(removed_archived_sql),
             len(removed_report_outputs),

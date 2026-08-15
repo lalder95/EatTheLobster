@@ -65,7 +65,7 @@ def main() -> int:
     print(
         f"{action} {len(removed)} expired file(s) older than {args.days} day(s): "
         f"{len(removed_archived_sql)} archived SQL file(s) and "
-        f"{len(removed_report_outputs)} CSV/XLSX report file(s)."
+        f"{len(removed_report_outputs)} primary SQL/CSV/XLSX file(s)."
     )
     for path in removed:
         print(f" - {path}")

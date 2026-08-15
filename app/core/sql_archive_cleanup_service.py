@@ -43,7 +43,7 @@ class SqlArchiveCleanupService:
         dry_run: bool = False,
         now: datetime | None = None,
     ) -> list[pathlib.Path]:
-        """Remove expired CSV/XLSX results from the top-level query folder."""
+        """Remove expired SQL, CSV, and XLSX files from the top-level query folder."""
         if retention_days < 0:
             raise ValueError("retention_days cannot be negative")
 
@@ -56,7 +56,7 @@ class SqlArchiveCleanupService:
             path
             for path in query_dir.iterdir()
             if path.is_file()
-            and path.suffix.lower() in {".csv", ".xlsx"}
+            and path.suffix.lower() in {".sql", ".csv", ".xlsx"}
             and datetime.fromtimestamp(path.stat().st_mtime) < cutoff
         )
 
