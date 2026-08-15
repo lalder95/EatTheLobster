@@ -114,6 +114,40 @@ def test_schema_loader_summarizes_tables(tmp_path: Path) -> None:
     assert "id: int" in context
 
 
+def test_schema_context_includes_field_format_metadata(tmp_path: Path) -> None:
+        schema_file = tmp_path / "schema.json"
+        schema_file.write_text(
+                """
+                {
+                    "database": "demo",
+                    "tables": [
+                        {
+                            "name": "salesDetail",
+                            "columns": [
+                                {
+                                    "name": "net_sales",
+                                    "type": "NVARCHAR(max)",
+                                    "logical_type": "currency",
+                                    "format_hint": "currency with two decimal places",
+                                    "is_aggregate_safe": false,
+                                    "is_date_filter_safe": false,
+                                    "sql_conversion_hint": "TRY_CONVERT(decimal(18,2), [net_sales])"
+                                }
+                            ]
+                        }
+                    ]
+                }
+                """,
+                encoding="utf-8",
+        )
+
+        context = load_schema_context(schema_file)
+
+        assert "logical type=currency" in context
+        assert "aggregate-safe=False" in context
+        assert "SQL Server conversion=TRY_CONVERT(decimal(18,2), [net_sales])" in context
+
+
 def test_chatbot_prompt_requires_plain_language() -> None:
     prompt = ChatbotService()._build_system_prompt("schema context")
 
@@ -121,6 +155,8 @@ def test_chatbot_prompt_requires_plain_language() -> None:
     assert "one simple question at a time" in prompt
     assert "aggregate by store" in prompt
     assert "sort from highest to lowest" in prompt
+    assert "TRY_CONVERT(decimal(18,2)" in prompt
+    assert "TRY_CONVERT(date" in prompt
 
 
 def test_settings_repository_roundtrip() -> None:

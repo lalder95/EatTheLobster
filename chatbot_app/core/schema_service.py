@@ -34,7 +34,29 @@ def _summarize_node(node, lines: list[str], indent: str) -> None:
                             if isinstance(column, dict):
                                 column_name = column.get("name") or column.get("column_name") or "unknown_column"
                                 column_type = column.get("type") or column.get("data_type") or "unknown"
-                                lines.append(f"{indent}  - {column_name}: {column_type}")
+                                details = [f"{column_name}: {column_type}"]
+                                logical_type = column.get("logical_type")
+                                if logical_type:
+                                    details.append(f"logical type={logical_type}")
+                                format_hint = column.get("format_hint")
+                                if format_hint:
+                                    details.append(f"format={format_hint}")
+                                if "is_aggregate_safe" in column:
+                                    details.append(
+                                        "aggregate-safe="
+                                        f"{bool(column.get('is_aggregate_safe'))}"
+                                    )
+                                if "is_date_filter_safe" in column:
+                                    details.append(
+                                        "date-filter-safe="
+                                        f"{bool(column.get('is_date_filter_safe'))}"
+                                    )
+                                conversion_hint = column.get("sql_conversion_hint")
+                                if conversion_hint:
+                                    details.append(
+                                        f"SQL Server conversion={conversion_hint}"
+                                    )
+                                lines.append(f"{indent}  - " + "; ".join(details))
                             else:
                                 lines.append(f"{indent}  - {column}")
                     elif isinstance(columns, dict):

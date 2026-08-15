@@ -28,6 +28,8 @@ def test_build_schema_snapshot_and_export_json(tmp_path, monkeypatch):
         metadata,
         Column("id", Integer, primary_key=True),
         Column("name", String(50), nullable=False),
+        Column("net_sales", String),
+        Column("sale_date", String),
     )
     Table(
         "children",
@@ -48,8 +50,17 @@ def test_build_schema_snapshot_and_export_json(tmp_path, monkeypatch):
 
     assert snapshot["database"] == "demo"
     assert snapshot["host"] == "localhost"
+    assert snapshot["schema_format_version"] == 2
     assert {table["name"] for table in snapshot["tables"]} == {"parents", "children"}
     assert any(rel["from_table"] == "children" and rel["to_table"] == "parents" for rel in snapshot["relationships"])
+
+    parents_snapshot = next(table for table in snapshot["tables"] if table["name"] == "parents")
+    columns = {column["name"]: column for column in parents_snapshot["columns"]}
+    assert columns["net_sales"]["logical_type"] == "currency"
+    assert columns["net_sales"]["is_aggregate_safe"] is False
+    assert "TRY_CONVERT(decimal(18,2)" in columns["net_sales"]["sql_conversion_hint"]
+    assert columns["sale_date"]["logical_type"] == "date"
+    assert columns["sale_date"]["is_date_filter_safe"] is False
 
     output = tmp_path / "schema.json"
     result = service.export_to_json(conn, output)
