@@ -231,6 +231,7 @@ class QueryRunnerPage(QWidget):
             for col, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setData(Qt.ItemDataRole.UserRole, run.id)
                 if col == 3 and run.status in _STATUS_COLORS:
                     item.setForeground(Qt.GlobalColor.white)
                     item.setBackground(Qt.GlobalColor.transparent)
